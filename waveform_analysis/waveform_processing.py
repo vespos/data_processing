@@ -6,6 +6,7 @@ from scipy.signal import savgol_filter
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.decomposition import TruncatedSVD
 from sklearn.linear_model import Ridge
+from sklearn.metrics import r2_score
 
 
 
@@ -32,11 +33,11 @@ def get_basis_and_projector(waveforms, n_components=1, n_iter=20):
     return A, projector, svd
 
 
-def construct_2PulseProjector(singlePulseBasis, delay=None, nCoeff=1, sampling=.125, method='pinv', **kwargs):
+def construct_2PulseProjector(singlePulseBasis, delay=None, sampling=.125, method='pinv', **kwargs):
     """
     Gives the projector onto the subspace mapped by the chosen single-pulse SVD components for a two-pulse waveform
     Inputs:
-        singlePulseDataSvd: output of get_singlePulseSvd
+        singlePulseBasis: single pulse basis A
         delay: delay between the two pulses
         nCoeff: number of single pulse basis vectors to take
         method: 'pinv', 'QR', 'Ridge'
@@ -56,10 +57,10 @@ def construct_2PulseProjector(singlePulseBasis, delay=None, nCoeff=1, sampling=.
         
     
     """ (i) build the basis matrix """
-    A0 = singlePulseBasis[:nCoeff]
+    A0 = singlePulseBasis
     A1 = A0
-    A2 = np.roll(A0,int(delay/sampling),axis=1)
-    A = np.append(A1,A2,axis=0).transpose()
+    A2 = np.roll(A0,int(delay/sampling),axis=0)
+    A = np.append(A1,A2,axis=1)
     
     """ (ii) Construct the projector """
     if method=='pinv':
@@ -92,7 +93,7 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
     """ Regressor compatible with sk-learn package """
     def __init__(self, A=None, projector=None, mode='single'):
         """
-        A: Basis vectors of the subspace in matrix form (column)
+        A: Basis vectors of the subspace in matrix form (column vectors)
         projector: projector on the subspace A
         
         Construct basis A and projector using the function 'get_basis_projector' or 'construct_2PulseProjector'
@@ -102,7 +103,13 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
         self.mode = mode
     
     
-    def fit(self, X):
+    def fit(self, X, y=None):
+        """ y=None for sklearn compatibility reason """
+        # Check validity of input X:
+        if X.shape[0] != self.A.shape[0]:
+            self.coeffs_ = np.zeros(A.shape[1])
+            return self
+        
         if isinstance(self.projector, Ridge):
             ridge = self.projector.fit(self.A, X)
             coeffs = ridge.coef_
@@ -123,9 +130,21 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
         return reconstructed
     
     
-    def fit_reconstruct(self, X):
+    def predict(self, X=None):
+        """ Just for sklearn compatibility reason """
+        return self.reconstruct()
+    
+    
+    def score(self, X):
+        """ Returns the r2 score of the projected waveform """
+        return r2_score(X, self.reconstruct())
+        
+    
+    def fit_reconstruct(self, X, return_score=False):
         self.fit(X)
-        return(self.reconstruct())
+        if return_score:
+            return self.reconstruct(), self.score(X)
+        return self.reconstruct()
     
     
     def get_pulse_intensity(self, X):
