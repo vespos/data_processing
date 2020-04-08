@@ -98,23 +98,24 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
         
         Construct basis A and projector using the function 'get_basis_projector' or 'construct_2PulseProjector'
         """
-        self.A = A
-        self.projector = projector
+        self.A = A.T
+        self.projector = projector.T # transpose to allow fit of many data at once
         self.mode = mode
     
     
     def fit(self, X, y=None):
         """ y=None for sklearn compatibility reason """
         # Check validity of input X:
-        if X.shape[0] != self.A.shape[0]:
-            self.coeffs_ = np.zeros(A.shape[1])
-            return self
+#         if X.shape[0] != self.A.shape[0]:
+#             self.coeffs_ = np.zeros(self.A.shape[1])
+#             return self
         
         if isinstance(self.projector, Ridge):
             ridge = self.projector.fit(self.A, X)
             coeffs = ridge.coef_
         else:
-            coeffs = self.projector.dot(X)
+#             coeffs = self.projector.dot(X.T)
+            coeffs = X.dot(self.projector)
         
         self.coeffs_ = coeffs
         return self
@@ -126,7 +127,8 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
         except AttributeError:
             raise RuntimeError("You must fit the waveform before reconstructing it!")
             
-        reconstructed = self.A.dot(self.coeffs_)
+#         reconstructed = self.A.dot(self.coeffs_)
+        reconstructed = self.coeffs_.dot(self.A)
         return reconstructed
     
     
@@ -158,7 +160,7 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
         self.fit(X)
         if self.mode=='single':
             p = np.linalg.norm(self.coeffs_)
-            p_max = self.A.dot(self.coeffs_)
+            p_max = self.coeffs_.dot(self.A)
             p_max = p_max.max()
             return p, p_max
         elif self.mode=='double':
@@ -167,8 +169,10 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
             coeffs_p2 = self.coeffs_[nCoeff:]
             p1 = np.linalg.norm(coeffs_p1)
             p2 = np.linalg.norm(coeffs_p2)
-            p1_max = self.A[:,:nCoeff].dot(coeffs_p1)
-            p2_max = self.A[:,nCoeff:].dot(coeffs_p2)
+#             p1_max = self.A[:,:nCoeff].dot(coeffs_p1)
+            p1_max = coeffs_p1.dot(self.A[:nCoeff,:])
+#             p2_max = self.A[:,nCoeff:].dot(coeffs_p2)
+            p2_max = coeffs_p2.dot(self.A[nCoeff:,:])
             p1_max = p1_max.max()
             p2_max = p2_max.max()
             return p1, p2, p1_max, p2_max
