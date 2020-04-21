@@ -170,8 +170,8 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
     
     
     def score(self, X):
-        """ Returns the r2 score of the projected waveform """
-        return r2_score(X.T, self.reconstruct().T) # .T: strange hack so that the score of multiple waveforms is computed correctly
+        """ Returns the r2 score of the projected waveforms (one score value per waveform) """
+        return r2_score(X.T, self.reconstruct().T, multioutput='raw_values') # .T: hack so that the score of multiple waveforms is computed correctly
         
     
     def fit_reconstruct(self, X, return_score=False):
