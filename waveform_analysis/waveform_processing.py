@@ -124,8 +124,12 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
         Remarks:
             Because the basis A can be built artificially from non-orthogonal vectors, its projector is not necessarily 
             trivial, hence it is calculated separately.
+            
             Also, in order to facilitate the fit of multiple waveforms at once, both matrices are transposed. The projection and
             reconstruction are calculated thus as coeffs=X.dot(T) and coeffs.dot(A) respectively.
+            
+            The regressor is not fully compatible with sklearn unfortunately. This is because the basis and the projector are
+            external parameters that the package does not know how to handle properly.
         
         Construct basis A and projector using the function 'get_basis_projector' or 'construct_2PulseProjector'
         """
@@ -171,7 +175,8 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
     
     def score(self, X):
         """ Returns the r2 score of the projected waveforms (one score value per waveform) """
-        return r2_score(X.T, self.reconstruct().T, multioutput='raw_values') # .T: hack so that the score of multiple waveforms is computed correctly
+        return r2_score(X.T, self.reconstruct().T, multioutput='raw_values') 
+            # .T: hack so that the score of multiple waveforms is computed correctly
         
     
     def fit_reconstruct(self, X, return_score=False):
