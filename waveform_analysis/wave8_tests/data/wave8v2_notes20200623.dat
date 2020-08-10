@@ -1,0 +1,10 @@
+Run  Integral_size	Integral_delay	Baseline_size
+2(5Hz)    100			50		32
+3(5Hz)    80				50		32
+5(5Hz)     80				50		32
+before run5, the apd bias voltage was reset.  
+
+
+apd bias voltage reset (via multimeter) before 6 and 7, respectively.  
+6(100Hz)     80	     	  	  50  	      32
+7(10Hz)	     80			  50	      32

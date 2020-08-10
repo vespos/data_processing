@@ -2,6 +2,7 @@ import numpy as np
 from pathlib import Path
 
 from scipy.signal import savgol_filter
+from scipy.stats import pearsonr
 
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.decomposition import TruncatedSVD
@@ -43,25 +44,28 @@ def get_basis_and_projector(waveforms, n_components=1, n_iter=20):
     return A, projector, svd
         
 
-def multiPulseProjector(singlePulseBasis, n_pulse=2, delay=None, sampling=1, method='pinv', **kwargs):
-    """
-    Build the basis for a multiple waveform analysis, based on single pulse reference basis.
-    Inputs:
+def multiPulseProjector(singlePulseBasis, n_pulse=1, delay=None, sampling=1, method='pinv', **kwargs):
+    """ Build the basis for a multiple waveform analysis, based on single pulse reference basis.
+    
+    Args:
         singlePulseBasis: single pulse basis A
         n_pulse: number of pulse
         delay: delay between the pulses (if the number of delay is equal to n_pulse-1, then 
             the first pulse is assumed to have dl=0
         sampling: sampling of the waveform. Useful if the delay is given in time units instead of indices
         method: 'pinv', 'QR', 'Ridge'
+        kwargs: only for Ridge regressor (see code)
+    
     Returns:
-        Basis matrix A and projector function
-        The projector is given by:
-            P=A.dot(projector).dot(data)
-        The coefficients projector onto the subspace A are:
-            coeffs=projector.dot(data)
+        Basis matrix A and projector matrices
+    
+    The projection is given by:
+        P=A.dot(projector).dot(data)
+    The coefficients projector onto the subspace A are:
+        coeffs=projector.dot(data)
         
-        Note: if method 'Ridge' is used, then a RidgeRegressor object is returned instead of a projector (matrix).
-        The function fitPulse will take care of handling this difference.
+    Note: if method 'Ridge' is used, then a RidgeRegressor object is returned instead of a projector (matrix).
+    The function fitPulse will take care of handling this difference.
     """
     
     if delay is None:
@@ -101,8 +105,13 @@ def multiPulseProjector(singlePulseBasis, n_pulse=2, delay=None, sampling=1, met
 
 
 def construct_waveformRegressor(X_ref, n_components=1, n_pulse=1, **kwargs):
-    """ 
-    Construct waveform regressor based on a set of reference waveforms.
+    """ Construct waveform regressor based on a set of reference waveforms.
+    
+    Args:
+        X_ref: reference waveform
+        n_components: nubmer of SVD components to use for the fit
+        n_pulse: number of pulse to fit in the waveform
+        **kwargs: see function multiPulseProjector. If n_pulse>1, a kwarg 'delay' is mandatory.
     """
     A, projector, svd = get_basis_and_projector(X_ref, n_components=n_components)
     if n_pulse>1:
@@ -116,14 +125,15 @@ def construct_waveformRegressor(X_ref, n_components=1, n_pulse=1, **kwargs):
 
 class WaveformRegressor(BaseEstimator, RegressorMixin):
     """ Regressor compatible with sk-learn package (or not really...) """
-    def __init__(self, A=None, projector=None, n_pulse=1):
+    def __init__(self, A=None, projector=None, n_pulse=1, roi=None):
         """
-        A: Basis vectors of the subspace in matrix form (column vectors)
-        projector: projector on the subspace A
+        Args:
+            A: Basis vectors of the subspace in matrix form (column vectors)
+                projector: projector on the subspace A
         
         Remarks:
             Because the basis A can be built artificially from non-orthogonal vectors, its projector is not necessarily 
-            trivial, hence it is calculated separately.
+            trivial (as in simply A.T), hence it is calculated separately.
             
             Also, in order to facilitate the fit of multiple waveforms at once, both matrices are transposed. The projection and
             reconstruction are calculated thus as coeffs=X.dot(T) and coeffs.dot(A) respectively.
@@ -133,9 +143,11 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
         
         Construct basis A and projector using the function 'get_basis_projector' or 'construct_2PulseProjector'
         """
-        self.A = A.T
+        self.A = A.T # transpose to allow fit of many waveforms at once, following sklearn convention
         self.projector = projector.T # transpose to allow fit of many data at once
         self.n_pulse_ = n_pulse
+        if roi is None:
+            self.roi=[0, 1e6]
     
     
     def fit(self, X, y=None):
@@ -153,7 +165,10 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
 #             coeffs = self.projector.dot(X.T) # old way
             coeffs = X.dot(self.projector)
         
-        self.coeffs_ = coeffs
+        if len(X.shape)==1:
+            self.coeffs_ = coeffs[None,:]
+        else:
+            self.coeffs_ = coeffs
         return self
     
     
@@ -174,10 +189,21 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
     
     
     def score(self, X):
-        """ Returns the r2 score of the projected waveforms (one score value per waveform) """
-        return r2_score(X.T, self.reconstruct().T, multioutput='raw_values') 
+        """ Returns the r2 score of the projected waveforms (one score value per waveform)
+        Must have called fit(X) or fit_reconstruct(X) before.
+        """
+        return r2_score(X.T, self.reconstruct().T, multioutput='raw_values')
             # .T: hack so that the score of multiple waveforms is computed correctly
-        
+    
+    
+    def pearsonr_coeff(self, X):
+        """ Pearson correlation between the fit and the waveform X
+        Must have called fit(X) or fit_reconstruct(X) before.
+        """
+        if len(X.shape)==1:
+            X = X[None,:]
+        return np.asarray([pearsonr(xx, rr)[0] for xx, rr in zip(X, self.reconstruct())])
+    
     
     def fit_reconstruct(self, X, return_score=False):
         self.fit(X)
@@ -198,13 +224,22 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
         self.fit(X)
         nCoeff = int(self.coeffs_.shape[1]/self.n_pulse_)
         intensities = np.zeros((self.coeffs_.shape[0],self.n_pulse_))
+        if mode=='both':
+            intensities_max = np.zeros((self.coeffs_.shape[0],self.n_pulse_))
         for ii in range(self.n_pulse_):
             coeffs = self.coeffs_[:,ii*nCoeff:(ii+1)*nCoeff]
             if mode=='norm':
                 intensities[:,ii] = np.linalg.norm(coeffs, axis=1)
             elif mode=='max':
                 reconstructed_single = coeffs.dot(self.A[ii*nCoeff:(ii+1)*nCoeff,:])
-                intensities[:,ii] = np.max(reconstructed_single, axis=1)      
+                intensities[:,ii] = np.max(reconstructed_single, axis=1)
+            elif mode=='both':
+                intensities[:,ii] = np.linalg.norm(coeffs, axis=1)
+                reconstructed_single = coeffs.dot(self.A[ii*nCoeff:(ii+1)*nCoeff,:])
+                intensities_max[:,ii] = np.max(reconstructed_single, axis=1)
+        
+        if mode=='both':
+            return intensities, intensities_max
         return intensities
 
     
@@ -220,7 +255,7 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
 """ 
 %%%%%%%%%%%%%%%%%%%%% OLD FUNCTIONS %%%%%%%%%%%%%%%%%%%%% 
 May not work properly anymore.
-Kept for potential backward compatibility.
+Kept for potential backward compatibility on older scripts.
 """
 
 def construct_2PulseProjector(singlePulseBasis, delay=None, sampling=.125, method='pinv', **kwargs):

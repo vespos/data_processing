@@ -10,9 +10,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import PyQt5
-%matplotlib qt
+# %matplotlib qt
 
 #%%
+
+def get_intensities(f):
+    events = file2frames(f)
+    wave8data = []
+    for event in events:
+        dat = descramble_frame(event)
+        if dat['Int'].size==0:
+            continue
+        wave8data.append(dat['Int'])
+    return np.asarray(wave8data)
+
 
 def file2frames(f):
     '''
@@ -89,41 +100,41 @@ def descramble_frame(data):
 
 #%%
 
-# Read the binary file and find consecutive events
+# # Read the binary file and find consecutive events
 
-f = "/u1/mkwiatko/wave8_data/data3.dat"
+# f = "/u1/mkwiatko/wave8_data/data3.dat"
 
-events = file2frames(f)
-
-
-#%%
-wave8data = descramble_frame(events[0])
-i=0
-channel = 'Wave2'
-stop = len(events)
-fig, ax = plt.subplots(figsize=(12,8),dpi=100)
-
-x = np.arange(0, len(wave8data[channel]), 1)
-line, = ax.plot(x, wave8data[channel])
+# events = file2frames(f)
 
 
+# #%%
+# wave8data = descramble_frame(events[0])
+# i=0
+# channel = 'Wave2'
+# stop = len(events)
+# fig, ax = plt.subplots(figsize=(12,8),dpi=100)
 
-def updatefig(*args):
-    global i
-    if (i<stop):
-        i += 1
-    else:
-        i = 0
-    wave8data = descramble_frame(events[i])
-    line.set_ydata(wave8data[channel])  # update the data.
-    return line,
-
-
-ani = animation.FuncAnimation(fig=fig, func=updatefig, interval =1)
+# x = np.arange(0, len(wave8data[channel]), 1)
+# line, = ax.plot(x, wave8data[channel])
 
 
-plt.title(channel)
-plt.show()
+
+# def updatefig(*args):
+#     global i
+#     if (i<stop):
+#         i += 1
+#     else:
+#         i = 0
+#     wave8data = descramble_frame(events[i])
+#     line.set_ydata(wave8data[channel])  # update the data.
+#     return line,
+
+
+# ani = animation.FuncAnimation(fig=fig, func=updatefig, interval =1)
+
+
+# plt.title(channel)
+# plt.show()
 
 
 
