@@ -69,7 +69,10 @@ def multiPulseProjector(singlePulseBasis, n_pulse=1, delay=None, sampling=1, met
     """
     
     if delay is None:
-        raise ValueError('Delay is None, give it a value!')
+        if n_pulse==1:
+            delay = [0]
+        else:
+            raise ValueError('No delay given for multipulse basis.')
     if len(delay)==n_pulse-1:
         delay = np.insert(delay,0,0)
     elif len(delay)==n_pulse:
@@ -82,7 +85,7 @@ def multiPulseProjector(singlePulseBasis, n_pulse=1, delay=None, sampling=1, met
     A0 = singlePulseBasis    
     A = []
     for ii in range(n_pulse):
-        A.append(np.roll(A0,int(delay[ii]/sampling),axis=0))
+        A.append(np.roll(A0,int(delay[ii]/sampling), axis=0))
     A = np.concatenate(A, axis=1)
     
     """ (ii) Construct the projector """
@@ -104,7 +107,7 @@ def multiPulseProjector(singlePulseBasis, n_pulse=1, delay=None, sampling=1, met
         raise NameError('Method not implemented')
 
 
-def construct_waveformRegressor(X_ref, n_components=1, n_pulse=1, **kwargs):
+def construct_waveformRegressor(X_ref, n_components=1, n_pulse=1, delay=None, **kwargs):
     """ Construct waveform regressor based on a set of reference waveforms.
     
     Args:
@@ -114,11 +117,7 @@ def construct_waveformRegressor(X_ref, n_components=1, n_pulse=1, **kwargs):
         **kwargs: see function multiPulseProjector. If n_pulse>1, a kwarg 'delay' is mandatory.
     """
     A, projector, svd = get_basis_and_projector(X_ref, n_components=n_components)
-    if n_pulse>1:
-        if not 'delay' in kwargs:
-            print('A delay is needed for multipulse analysis')
-            return 0
-        A, projector = multiPulseProjector(A, n_pulse=n_pulse, **kwargs)
+    A, projector = multiPulseProjector(A, n_pulse=n_pulse, delay=delay, **kwargs)
     return WaveformRegressor(A=A, projector=projector, n_pulse=n_pulse)
 
 
@@ -135,11 +134,11 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
             Because the basis A can be built artificially from non-orthogonal vectors, its projector is not necessarily 
             trivial (as in simply A.T), hence it is calculated separately.
             
-            Also, in order to facilitate the fit of multiple waveforms at once, both matrices are transposed. The projection and
-            reconstruction are calculated thus as coeffs=X.dot(T) and coeffs.dot(A) respectively.
+            Also, in order to facilitate the fit of multiple waveforms at once, both matrices are transposed. The projection 
+            and reconstruction are calculated thus as coeffs=X.dot(T) and coeffs.dot(A) respectively.
             
-            The regressor is not fully compatible with sklearn unfortunately. This is because the basis and the projector are
-            external parameters that the package does not know how to handle properly.
+            The regressor is not fully compatible with sklearn unfortunately. This is because the basis and the projector 
+            are external parameters that the package does not know how to handle properly.
         
         Construct basis A and projector using the function 'get_basis_projector' or 'construct_2PulseProjector'
         """
