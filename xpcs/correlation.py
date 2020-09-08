@@ -12,7 +12,7 @@ def _spatial_correlation_fourier(fim1, fim2_star, fmask, fmask_star):
     A = A_num1 * A_num2
     A_denom = np.fft.irfft2(fim1*fmask_star) * np.fft.irfft2(fim2_star*fmask)
     # make sure the normalization value isn't 0 otherwise the autocorr will 'explode'
-    pos = np.where(np.abs(A_denom) != 0)
+    pos = np.where(np.abs(A_denom)!=0)
     A[pos] /= A_denom[pos]
     A = np.fft.fftshift(A)
     return A
@@ -49,15 +49,18 @@ def spatial_correlation_fourier(img, img2=None, mask=None):
     return A
 
 
-def remove_central_corr(A):
+def remove_central_corr(A, r=0):
+    """ Remove the central part of the correlation, which is peaking to high. The range of data being removed
+    can be adjusted with the parameter r.
+    """
     i,j = np.unravel_index(np.argmax(A), A.shape)
-    A[i,j] = np.nan
+    A[i-r:i+1+r, j-r:j+1+r] = np.nan
     return A
 
 
 def correct_illumination(imgs, roi, kernel_size=5):
     """ Correct the detector images for non-uniform illumination.
-    This implementaion follows Part II in Duri et al. PHYS. REV. E 72, 051401 (2005).
+    This implementation follows Part II in Duri et al. PHYS. REV. E 72, 051401 (2005).
     
     Args:
         imgs: stack of detector images

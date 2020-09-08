@@ -18,6 +18,7 @@ def Pk(k,kavg,M):
     return y1*y2*y3
 
 def NB_dist(k,kavg,M):
+    """ From Yanwen """
     temp1 = gammaln(k+M)-gammaln(k+1)-gammaln(M)
     temp2 = -k*np.log(1 + M/kavg)
     temp3 = -M*np.log(1 + kavg/M)
@@ -33,40 +34,42 @@ def fit_Pk(kavg, prob, k, M=2, weights=None, func='Pk'):
     params['M'].set(value=M)
     return Pk_model.fit(prob, params, kavg=kavg, weights=weights, nan_policy='omit')
 
-def chi_MLE(kavg, prob, M, Nroi):
+def chi_MLE(kavg, prob, Ms, nRoi):
     kmax = prob.shape[1]
-    MLE = 0
-    for jj in range(prob.shape[0]):
-        temp = -2*np.nansum([prob[jj,k]*Nroi*np.log(Pk(k,kavg[jj],M)/prob[jj,k]) for k in range(kmax)], axis=0)
-#         if np.any(np.isnan(temp)):
-#             continue
-#         else:
-        MLE+=temp
-    MLE = np.asarray(MLE)
-    return MLE
+    prob = prob.transpose()
+    N = np.size(kavg)
+    k = np.reshape(np.arange((kmax)),(kmax,1))
+    k = np.tile(k,(1,N))
+    
+    chi_sq = np.asarray([-2*np.nansum( prob*nRoi*np.log(Pk(k,kavg,M)/prob) ) for M in Ms])
+    return chi_sq
 
 
 class SpeckleStatistics(object):
-    def __init__(self, kavg, pk, Nroi=None, **kwargs):
+    def __init__(self, kavg, pk, nRoi=1, **kwargs):
         self.kavg = np.asarray(kavg)
         self.pk = np.asarray(pk)
         self.ks = self.pk.shape[1]
         assert (self.kavg.shape[0] == self.pk.shape[0]), "Sizes of kave and pk do not match"
-        if Nroi is not None:
-            self.Nroi = Nroi
-        else:
-            self.Nroi = 1
-            print('Nroi not given, the uncertainty estimate of the MLE estimate will be wrong.')
+        if nRoi==1:
+            print('Nroi not given, the uncertainty estimate of the MLE will be wrong.')
+        self.nRoi = nRoi
         
-        self._kavgMin = 0.01
-        self._kavgMax = 0.2
-        self._kavgBinNb = 10
-        self._kavgBinType = 'log'
+        if 'kavgRange' in kwargs:
+            # kavgRange: [min, max, binNb]
+            self._kavgMin = kwargs['kavgRange'][0]
+            self._kavgMax = kwargs['kavgRange'][1]
+            self._kavgBinNb = kwargs['kavgRange'][2]
+        else:
+            self._kavgMin = 0.01
+            self._kavgMax = 0.2
+            self._kavgBinNb = 10
+        self._kavgBinType = 'log' # chose between linspace or logspace for the bins
         return
     
     
     def fit_pk(self, k, ax=None):
-        """ See Yanwen's function and combine with mine.
+        """ Fit the negative binomial distribution to the Pk(kave) curves.
         """
         kavg = self.kavg
         kavgfilt = (kavg>=self._kavgMin)&(kavg<=self._kavgMax)
@@ -97,7 +100,7 @@ class SpeckleStatistics(object):
             pk_binned[ii] = np.mean(pk[filt])
             pk_err[ii] = np.std(pk[filt])/np.sqrt(count)
             
-        fitRes = fit_Pk(kavg_binned, pk_binned, k, weights=(counts*kavg_binned**2), func='NB')
+        fitRes = fit_Pk(kavg_binned, pk_binned, k, weights=(counts*kavg_binned**2), func='Pk')
         M0 = fitRes.params['M'].value
         M0_err = fitRes.params['M'].stderr
         beta = 1/M0
@@ -128,10 +131,11 @@ class SpeckleStatistics(object):
         """
         kavg = self.kavg
         kavgfilt = (kavg>=self._kavgMin)&(kavg<=self._kavgMax)
+#         kavgfilt = np.ones_like(kavg).astype(bool)
         kavg = kavg[kavgfilt]
         pk = self.pk[kavgfilt,:]
         
-        chi_sq = chi_MLE(kavg, pk, M, self.Nroi)
+        chi_sq = chi_MLE(kavg, pk, M, self.nRoi)
         
         M_MLE = M[np.argmin(chi_sq)]
         dM = M[1]-M[0]
