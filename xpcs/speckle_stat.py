@@ -4,6 +4,32 @@ from scipy.special import gamma, factorial, gammaln
 from lmfit import Model
 
 
+def get_pk(imgs_roi, adu_1ph, nphot=8, sizeBin=1):
+    """ Get the photon probabilities in a stack of imgs 
+    
+    Args:
+        imgs_roi: stack of input images
+        adu_1ph: one-photon value
+        nphot: max number of photon to consider
+        sizeBin: use for masked detector
+    Returns:
+        pk: probability array (nshots, nphot)
+        kbar: k average (nshots)
+        photonMaps:
+        Nroi: roi size (important for MLE)
+    """
+    if len(imgs_roi.shape)==2:
+        imgs_roi = imgs_roi[None, ...]
+    
+    photonMaps = np.int32(np.round(imgs_roi/adu_1ph))
+    pk = np.asarray(
+        [np.bincount(photonMap.ravel(), minlength=nphot)[:nphot] for photonMap in photonMaps]
+        ).astype(float)
+    Nroi = imgs_roi[0].size
+    pk = pk/Nroi*sizeBin
+    kbar = np.mean(np.mean(photonMaps, axis=1), axis=1)*sizeBin
+    return pk, kbar, photonMaps, Nroi
+
 def Pk(k,kavg,M):
     """ 
     Photon statistics according to the negative binomial distribution
@@ -38,7 +64,7 @@ def chi_MLE(kavg, prob, Ms, nRoi):
     kmax = prob.shape[1]
     prob = prob.transpose()
     N = np.size(kavg)
-    k = np.reshape(np.arange((kmax)),(kmax,1))
+    k = np.reshape(np.arange(kmax),(kmax,1))
     k = np.tile(k,(1,N))
     
     chi_sq = np.asarray([-2*np.nansum( prob*nRoi*np.log(Pk(k,kavg,M)/prob) ) for M in Ms])
@@ -62,13 +88,13 @@ class SpeckleStatistics(object):
             self._kavgBinNb = kwargs['kavgRange'][2]
         else:
             self._kavgMin = 0.01
-            self._kavgMax = 0.2
+            self._kavgMax = 0.3
             self._kavgBinNb = 10
         self._kavgBinType = 'log' # chose between linspace or logspace for the bins
         return
     
     
-    def fit_pk(self, k, ax=None):
+    def fit_pk(self, k, ax=None, bin_kavg=True):
         """ Fit the negative binomial distribution to the Pk(kave) curves.
         """
         kavg = self.kavg
@@ -76,31 +102,36 @@ class SpeckleStatistics(object):
         kavg = kavg[kavgfilt]
         pk = self.pk[kavgfilt,k]
         
-        if self._kavgBinType=='lin':
-            binedges = np.linspace(self._kavgMin, self._kavgMax, self._kavgBinNb+1)
-        elif self._kavgBinType=='log':
-            binedges = np.logspace(np.log10(self._kavgMin), np.log10(self._kavgMax), self._kavgBinNb+1)
-        # np.digitize seems to also include values below the bin
-        counts, edges = np.histogram(kavg, bins=binedges)
+        if bin_kavg:
+            if self._kavgBinType=='lin':
+                binedges = np.linspace(self._kavgMin, self._kavgMax, self._kavgBinNb+1)
+            elif self._kavgBinType=='log':
+                binedges = np.logspace(np.log10(self._kavgMin), np.log10(self._kavgMax), self._kavgBinNb+1)
+            # np.digitize seems to also include values below/above the first/last bin
+            # filtering on kavg is thus important
+            counts, edges = np.histogram(kavg, bins=binedges)
+
+            inds = np.digitize(kavg, edges)
+            n = counts.size
+            kavg_binned = np.zeros(n)
+            kavg_err = np.zeros(n)
+            pk_binned = np.zeros(n)
+            pk_err = np.zeros(n)
+            nphots = np.zeros(n)
+
+            for ii, count in enumerate(counts):
+                filt = (inds==ii+1)
+    #             if np.sum(filt)==0:
+    #                 continue
+                kavg_binned[ii] = np.mean(kavg[filt])
+                kavg_err[ii] = np.std(kavg[filt])/np.sqrt(count)
+                pk_binned[ii] = np.mean(pk[filt])
+                pk_err[ii] = np.std(pk[filt])/np.sqrt(count)
+
+            fitRes = fit_Pk(kavg_binned, pk_binned, k, weights=(counts*kavg_binned**2), func='Pk')
+        else:
+            fitRes = fit_Pk(kavg, pk, k, func='Pk')
         
-        inds = np.digitize(kavg, edges)
-        n = counts.size
-        kavg_binned = np.zeros(n)
-        kavg_err = np.zeros(n)
-        pk_binned = np.zeros(n)
-        pk_err = np.zeros(n)
-        nphots = np.zeros(n)
-        
-        for ii, count in enumerate(counts):
-            filt = (inds==ii+1)
-#             if np.sum(filt)==0:
-#                 continue
-            kavg_binned[ii] = np.mean(kavg[filt])
-            kavg_err[ii] = np.std(kavg[filt])/np.sqrt(count)
-            pk_binned[ii] = np.mean(pk[filt])
-            pk_err[ii] = np.std(pk[filt])/np.sqrt(count)
-            
-        fitRes = fit_Pk(kavg_binned, pk_binned, k, weights=(counts*kavg_binned**2), func='Pk')
         M0 = fitRes.params['M'].value
         M0_err = fitRes.params['M'].stderr
         beta = 1/M0
@@ -111,7 +142,10 @@ class SpeckleStatistics(object):
             yfit = Pk(k, kavg_fit, M0)
             ymin = Pk(k, kavg_fit, 100)
             ymax = Pk(k, kavg_fit, 1)
-            ax.errorbar(kavg_binned, pk_binned, xerr=kavg_err, yerr=pk_err, color='orange', fmt='o')
+            if bin_kavg:
+                ax.errorbar(kavg_binned, pk_binned, xerr=kavg_err, yerr=pk_err, color='orange', fmt='o')
+            else:
+                ax.plot(kavg, pk, '.', color='purple', markersize=1)
             ax.plot(kavg_fit, yfit, color='orange', label=r'$\beta$ = {:.3f} $\pm$ {:.3f}'.format(beta,beta_err))
             ax.plot(kavg_fit, ymax, '-.', color='gray')
             ax.plot(kavg_fit, ymin, ':', color='gray')
