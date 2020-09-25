@@ -179,7 +179,7 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
             
 #         reconstructed = self.A.dot(self.coeffs_) # old way
         reconstructed = self.coeffs_.dot(self.A)
-        return reconstructed
+        return reconstructed.real
     
     
     def predict(self, X=None):
