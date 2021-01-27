@@ -73,6 +73,8 @@ def multiPulseProjector(singlePulseBasis, n_pulse=1, delay=None, sampling=1, met
             delay = [0]
         else:
             raise ValueError('No delay given for multipulse basis.')
+    if type(delay) is float or type(delay) is int:
+        delay = [delay]
     if len(delay)==n_pulse-1:
         delay = np.insert(delay,0,0)
     elif len(delay)==n_pulse:

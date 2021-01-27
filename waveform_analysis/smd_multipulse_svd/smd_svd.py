@@ -44,7 +44,7 @@ class svdFit(DetObjectFunc):
         calibDir = det.det.env.calibDir()
         if self.basis_file is None:
             try:
-                # Automaticlly find the latest waveform basis file in calibDir
+                # Automatically find the latest waveform basis file in calibDir
                 calib_files = glob.glob('./wave_basis_'+det.det.alias+'*.h5') # dir for local test
 #                 calib_files = glob.glob(calibDir+'/wave_basis_'+det.det.alias+'*.h5')
                 self.basis_file = max(calib_files, key=os.path.getctime)
