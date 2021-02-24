@@ -1,5 +1,5 @@
 import numpy as np
-from pathlib import Path
+# from pathlib import Path
 
 from scipy.signal import savgol_filter
 from scipy.stats import pearsonr
@@ -155,7 +155,7 @@ class WaveformRegressor(BaseEstimator, RegressorMixin):
         """ y=None for sklearn compatibility reason """
         # Check validity of input X:
         if X.shape[-1] != self.A.shape[1]:
-            print('Data projector shapes dont match.')
+            print('Data and projector shapes dont match.')
             self.coeffs_ = np.zeros(self.A.shape[1])
             return self
         
